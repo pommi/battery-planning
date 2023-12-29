@@ -20,7 +20,7 @@ Command line options:
 # Stand alone mode
 
 The program will need as input:
-1) **Your own API token** from transparancy.entsoe.eu (to be adapted in the program, see below)
+1) ~~**Your own API token** from transparancy.entsoe.eu (to be adapted in the program, see below)~~
 2) The planning period
 3) The battery characteristics: maximum capacity, maximum charge and discharge speed, conversion efficiency
 
@@ -28,7 +28,7 @@ The main purpose of the program is to plan today and tomorrow (if the prices for
 
 It can however also be used to run on historic price data to simulate what could have been achieved and to evaluate return on investment for a battery system. At the end of the planning period the remaining charge will be zero and profit optimised.
 
-If the price data from entsoe.eu has been downloaded before it can be re-used from existing files, instead of requesting it again.
+If the price data from energyzero.nl has been downloaded before it can be re-used from existing files, instead of requesting it again.
 
 The progress, intermediate steps and finals results will be displayed on screen and an output file will be created that can be loaded into a spreadsheet. The level of output can be controlled by command line arguments:
 * -t for tracing. This is a debug mode with full display of intermediate steps and results.
@@ -37,7 +37,7 @@ The progress, intermediate steps and finals results will be displayed on screen 
 
 -s is the command line argument for standalone mode and is the default.
 
-Note the price data from the entsoe website is stored in local xml files with a timestamp and not automatically removed, so some manual maintenance of the file system will be required at some point.
+Note the price data from the energyzero website is stored in local json files with a timestamp and not automatically removed, so some manual maintenance of the file system will be required at some point.
 
 # Domoticz integration mode
 
@@ -106,14 +106,6 @@ It does not take into account any tax effects in the planning as these will diff
 It also assumes a linear charge/discharge curve (for example when calculating remaining charge/discharge capacity for part of an hour).
 
 It does not plan for electricity consumption in the home network. It can however be used to re-plan after a situation has changed as result of consumption. It also indicates the remaining cheapest hours without any planned action (with low_1, low_2 etc).
-
-# Get your API token for retrieving electricity prices.
-
-To get an API token (it is free):
-1. Register for an account at https://transparency.entsoe.eu/dashboard/show
-2. Send an email with subject "Restful API access" and your account email address in the body.
-3. After receipt of their confirmation, go into your account and generate your token.
-4. Copy and paste the token to replace the xxxxxx on the line indicated in the python program where it says securitytoken="xxxxxxxxxxx" (line 52). For the Domoticz mode copy and paste the token onto the Domoticz user variable.
 
 # Program internal logic
 

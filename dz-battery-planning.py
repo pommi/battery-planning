@@ -27,12 +27,9 @@ baseJSON="http://"+domoticzIP+":"+domoticzPort+"/json.htm?"   # the base string 
 ##################################################################################################################################
 
 from operator import itemgetter, attrgetter
-from datetime import date,datetime,timedelta
-import xml.etree.ElementTree as ET
+from datetime import date,datetime,timedelta,timezone
 import requests
-import copy
 import json
-import time
 import sys
 import urllib.parse
 
@@ -302,21 +299,23 @@ def loadPVforecast():
 
 
 def loadPrices(entsoeFileName,loadStartDate,loadEndDate):
-    # request the prices from entsoe.eu and store in a file
+    # request the prices from energyzero.nl and store in a file
     try:
-        # url components for https feed from ENTSOE.EU
-        urlwebsite='https://web-api.tp.entsoe.eu/api?'
-        urltoken='securityToken='+securitytoken
-        urldoctype='&documentType=A44'
-        urldomain='&in_Domain=10YNL----------L&out_Domain=10YNL----------L'
-        urlperiod='&periodStart='+loadStartDate+'0000&periodEnd='+loadEndDate+'2300'
-        url=urlwebsite+urltoken+urldoctype+urldomain+urlperiod
+        url = "https://api.energyzero.nl/v1/energyprices"
+        params = {
+            'fromDate': datetime.strptime(loadStartDate, '%Y%m%d').replace(tzinfo=datetime.now(timezone.utc).astimezone().tzinfo).isoformat(),
+            'tillDate': (datetime.strptime(loadEndDate, '%Y%m%d').replace(tzinfo=datetime.now(timezone.utc).astimezone().tzinfo) + timedelta(days=1)).isoformat(),
+            'interval': 4,
+            'usageType': 1,
+            'inclBtw': 'false',
+        }
         # creating HTTP response object from given url
-        if debug: print("Getting data from entsoe.eu for ",loadStartDate," to ",loadEndDate)
+        if debug: print("Getting data from engergyzero for ",loadStartDate," to ",loadEndDate)
         if debug: print(url)
-        response = requests.get(url)
+        if debug: print(params)
+        response = requests.get(url, params=params)
         if response.status_code == 200:
-            # saving the xml file
+            # saving the json file
             with open(entsoeFileName, 'wb') as f:
                 f.write(response.content)
             fileReceived=True
@@ -329,42 +328,40 @@ def loadPrices(entsoeFileName,loadStartDate,loadEndDate):
     return fileReceived
 
 
-def parseXMLintoPriceLists(xmlfile,runDate):
-    # create pricelists out of entsoe xml file and, if applicable, the PV forecast file
-    tree = ET.parse(xmlfile)
-    root = tree.getroot()
+def parseJSONintoPriceLists(jsonfile,runDate):
+    with open(jsonfile, "r") as read_file:
+        prices = json.load(read_file)["Prices"]
     # create empty lists for prices
     HourPriceList=[]  # the actual list for hours available for optimsation
     displayList=[]    # the list for tracking and display of results
     sequenceNr=0      # sequence number counts number of lines from entsoe
     pvHRs=0           # additional lines for pv forecast
-    if PVincl: 
+    if PVincl:
         forecastList=parseJSONintoPVList()
-    for item in root.iter():
+    for p in prices:
         pvForecast=0
-        if item.tag.find('price.amount')>0:
-            price=float(item.text)
-            if sequenceNr<=47: # never more than 2 days even if entsoe provides more than requested
-                if debug: print("processing price ",item.text)
-                datetimeString=datetime.strftime(runDate+timedelta(hours=sequenceNr),'%Y-%m-%d %H:%M:%S')
-                if sequenceNr>=starthour or sequenceNr>23: # all prices after (and including) starthour on first day are put on hourpricelist, plus next day, if any
+        price=float(p["price"]*1000)
+        if sequenceNr<=47: # never more than 2 days even if entsoe provides more than requested
+            if debug: print("processing price ",price)
+            datetimeString=datetime.strftime(runDate+timedelta(hours=sequenceNr),'%Y-%m-%d %H:%M:%S')
+            if sequenceNr>=starthour or sequenceNr>23: # all prices after (and including) starthour on first day are put on hourpricelist, plus next day, if any
 # list element will consist of sequenceNr,price,datetime,usedcapacity,usetype(usetype=Unclassified,Charge,Discharge),changechargeqty,changeamount,percentageused,pvForecast
-                    ListElement=[sequenceNr+pvHRs,price,datetimeString,initialCharge,"unclassified",0,0,0,0] 
-                    HourPriceList.append(ListElement)
-                    if PVincl:
-                        pvForecast=findPVforecast(datetimeString[0:10],int(datetimeString[11:13]),forecastList)
-                        if pvForecast>0:
-                            pvHRs+=1
-                            pvListElement=[sequenceNr+pvHRs,0,datetimeString,initialCharge,"unclassified",0,0,0,pvForecast]
-                            HourPriceList.append(pvListElement)
-                    if debug: print("List with length ",len(HourPriceList)," ",HourPriceList)
-                else:
-                    ListElement=[sequenceNr+pvHRs,price,datetimeString,0,"unclassified",0,0,0,0]  # no initial charge before starthour
-                displayList.append(ListElement)
-                if PVincl and pvForecast>0:  
-                    displayList.append(pvListElement)
+                ListElement=[sequenceNr+pvHRs,price,datetimeString,initialCharge,"unclassified",0,0,0,0]
+                HourPriceList.append(ListElement)
+                if PVincl:
+                    pvForecast=findPVforecast(datetimeString[0:10],int(datetimeString[11:13]),forecastList)
+                    if pvForecast>0:
+                        pvHRs+=1
+                        pvListElement=[sequenceNr+pvHRs,0,datetimeString,initialCharge,"unclassified",0,0,0,pvForecast]
+                        HourPriceList.append(pvListElement)
+                if debug: print("List with length ",len(HourPriceList)," ",HourPriceList)
+            else:
+                ListElement=[sequenceNr+pvHRs,price,datetimeString,0,"unclassified",0,0,0,0]  # no initial charge before starthour
+            displayList.append(ListElement)
+            if PVincl and pvForecast>0:
+                displayList.append(pvListElement)
 # pv lines are always in the list after the price line of the same hour
-            sequenceNr+=1
+        sequenceNr+=1
     return HourPriceList,displayList,sequenceNr
 
 def parseJSONintoPVList():
@@ -944,7 +941,7 @@ def main():
         writeMode="Y"
     else:
         getUserInput()
-        loadFile=input("Is the xml-data already available in the file(s) Y/N ? (default N) ") or "N"
+        loadFile=input("Is the json-data already available in the file(s) Y/N ? (default N) ") or "N"
         writeMode=input("Overwrite previous output file(s) Y/N ? (default Y) ") or "Y"
 
     if writeMode=="Y" or writeMode=="y":
@@ -956,7 +953,7 @@ def main():
     startDateObject=datetime.strptime(startdate,'%Y%m%d')
     endDateObject=datetime.strptime(enddate,'%Y%m%d')
     if runMode=="standalone":
-        outputFileName="entsoe-output"+startdate+".txt"
+        outputFileName="engergyzero-output"+startdate+".txt"
 
     if PVincl:
         if startdate!=todayString:
@@ -983,10 +980,10 @@ def main():
         if outputMode or debug: print("Processing : ",runDate)
         if runMode=="standalone":
             fileNameDate=datetime.strftime(runDate,'%Y%m%d')
-            entsoeFileName="entsoe"+fileNameDate+".xml"
+            entsoeFileName="engergyzero"+fileNameDate+".json"
         else:
             # runMode=="domoticz"
-            entsoeFileName="entsoe.xml" # no date in filename to prevent file system filling up
+            entsoeFileName="engergyzero.json" # no date in filename to prevent file system filling up
         if startdate==enddate:
             if loadFile[0]!="Y" and loadFile[0]!="y":
                 loadStartDate=datetime.strftime(runDate,'%Y%m%d')
@@ -1002,7 +999,7 @@ def main():
                 if not loadPrices(entsoeFileName,loadStartDate,loadEndDate):
                     print("ERROR: Something wrong with getting price data")
                     quit()
-        HourPriceList,displayList,priceHrs=parseXMLintoPriceLists(entsoeFileName,runDate)
+        HourPriceList,displayList,priceHrs=parseJSONintoPriceLists(entsoeFileName,runDate)
         if outputMode: print ("initial list")
         for i in displayList:
             if outputMode or debug: print(i)
